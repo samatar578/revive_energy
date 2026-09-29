@@ -96,18 +96,12 @@ def listing_to_dict(listing, include_supplier=True):
 
 # ─── NEW: Notify all producers when a listing is sold ──────────
 def notify_producers_waste_sold(listing, buyer_name, buyer_id):
-    """
-    Send in-app notifications and emails to all active energy producers
-    (except the buyer) informing them that a waste listing has been sold.
-    """
     try:
         from flask_mail import Message
         from flask import current_app
 
-        # 1. In-app notifications
         producers = User.query.filter_by(role='producer', account_status='verified').all()
         for producer in producers:
-            # skip the buyer (they already know)
             if producer.id == buyer_id:
                 continue
             notify = Notification(
@@ -118,7 +112,6 @@ def notify_producers_waste_sold(listing, buyer_name, buyer_id):
             )
             db.session.add(notify)
 
-        # 2. Email notifications
         mail = current_app.extensions.get('mail')
         if mail:
             subject = f'[ReVive] Waste Listing Sold: {listing.waste_type}'
@@ -280,6 +273,9 @@ def producer_dashboard():
 @role_required("producer", "energy-producer")
 def get_available_waste():
     try:
+        # Only listings with status "available" appear in the marketplace.
+        # Once a producer requests one, its status changes to "requested"
+        # and it disappears here for everyone else.
         listings = (
             WasteListing.query.filter_by(status="available")
             .order_by(WasteListing.created_at.desc())
@@ -295,7 +291,7 @@ def get_available_waste():
         return jsonify({"message": "Internal server error"}), 500
 
 
-# ─── REQUEST WASTE ──────────────────────────────────────────
+# ─── REQUEST WASTE (reserve the listing) ───────────────────
 @producer_bp.route("/producer/request-waste/<int:listing_id>", methods=["POST"])
 @jwt_required()
 @role_required("producer", "energy-producer")
@@ -304,8 +300,11 @@ def request_waste(listing_id):
         user_id = current_user_id()
         listing = WasteListing.query.get_or_404(listing_id)
 
+        # ─── Only available listings can be requested ─────────
         if listing.status != "available":
-            return jsonify({"message": "This waste is no longer available"}), 400
+            return jsonify({
+                "message": "This waste is no longer available — someone else may have requested it."
+            }), 409
 
         existing = WasteRequest.query.filter_by(
             listing_id=listing_id,
@@ -330,6 +329,12 @@ def request_waste(listing_id):
 
         db.session.add(req)
 
+        # ─── RESERVE THE LISTING ──────────────────────────────
+        # Flip the status so it disappears from the marketplace for
+        # every other producer. Only "available" listings are returned
+        # by get_available_waste().
+        listing.status = "requested"
+
         notify = Notification(
             user_id=listing.supplier_id,
             title="New Waste Request",
@@ -343,6 +348,7 @@ def request_waste(listing_id):
         return jsonify({
             "message": "Request sent successfully",
             "request_id": req.id,
+            "listing_status": listing.status,
         }), 201
 
     except Exception as e:
@@ -410,7 +416,7 @@ def get_my_requests():
         return jsonify({"message": "Internal server error"}), 500
 
 
-# ─── CANCEL REQUEST ─────────────────────────────────────────
+# ─── CANCEL REQUEST (release the listing back) ─────────────
 @producer_bp.route("/producer/requests/<int:request_id>/cancel", methods=["PATCH"])
 @jwt_required()
 @role_required("producer", "energy-producer")
@@ -427,10 +433,30 @@ def cancel_request(request_id):
                 "message": "Cannot cancel request in its current state"
             }), 400
 
+        # ─── Mark the request cancelled ───────────────────────
         req.status = "cancelled"
+
+        # ─── RELEASE THE LISTING BACK TO THE MARKETPLACE ─────
+        # If the listing was reserved by this request, restore it to
+        # "available" so it appears for all producers again.
+        listing = get_listing(req.listing_id)
+        if listing and listing.status in ("requested", "approved"):
+            listing.status = "available"
+
+            notify = Notification(
+                user_id=listing.supplier_id,
+                title="Waste Available Again",
+                message=f'Your listing "{listing.waste_type}" is available again after a cancellation.',
+                type="listing_released",
+            )
+            db.session.add(notify)
+
         db.session.commit()
 
-        return jsonify({"message": "Request cancelled"}), 200
+        return jsonify({
+            "message": "Request cancelled",
+            "listing_status": listing.status if listing else None,
+        }), 200
 
     except Exception as e:
         current_app.logger.error(f"Error in cancel_request: {e}", exc_info=True)
@@ -531,7 +557,7 @@ def confirm_delivery(job_id):
         return jsonify({"message": f"Internal server error: {str(e)}"}), 500
 
 
-# ─── ★★★★★ DOWNLOAD RECEIPT ★★★★★ ──────────────────────────
+# ─── DOWNLOAD RECEIPT ──────────────────────────────────────────
 @producer_bp.route('/producer/deliveries/<int:job_id>/receipt', methods=['GET'])
 @jwt_required()
 @role_required("producer", "energy-producer")
@@ -602,7 +628,6 @@ def download_receipt(job_id):
             'escrow_status': payment.escrow_status,
         }
 
-        # Persist updated values
         updated = False
         if payment.waste_amount != waste_amount:
             payment.waste_amount = waste_amount
@@ -693,48 +718,35 @@ def rate_supplier():
         return jsonify({'message': str(e)}), 500
 
 
-# ─── ★ FIXED: MARK REQUEST AS SOLD ──────────────────────────────
+# ─── MARK REQUEST AS SOLD ──────────────────────────────────────
 @producer_bp.route('/producer/requests/<int:request_id>/mark-sold', methods=['POST'])
 @jwt_required()
 @role_required("producer", "energy-producer")
 def mark_request_sold(request_id):
-    """
-    Call this endpoint AFTER the producer has successfully paid for a request.
-    It will:
-      - Mark the associated WasteListing as 'sold'.
-      - Notify all other producers that the waste is no longer available.
-    """
     try:
         user_id = current_user_id()
         waste_request = WasteRequest.query.get_or_404(request_id)
 
-        # 1. Verify ownership
         if int(waste_request.producer_id) != int(user_id):
             return jsonify({'message': 'Unauthorized'}), 403
 
-        # 2. Check that payment is completed
         payment = Payment.query.filter_by(request_id=request_id).order_by(Payment.id.desc()).first()
         if not payment or payment.payment_status != 'paid':
             return jsonify({'message': 'Payment not completed for this request'}), 400
 
-        # 3. Get the listing
         listing = get_listing(waste_request.listing_id)
         if not listing:
             return jsonify({'message': 'Listing not found'}), 404
 
-        # 4. If already sold, do nothing but return success
         if listing.status == 'sold':
             return jsonify({'message': 'Listing already marked as sold'}), 200
 
-        # 5. Update listing status
         listing.status = 'sold'
         db.session.commit()
 
-        # 6. Notify all other producers (pass buyer_id and buyer_name)
         buyer_name = get_user_name(user_id, 'A producer')
-        notify_producers_waste_sold(listing, buyer_name, user_id)   # <--- FIX: pass buyer_id
+        notify_producers_waste_sold(listing, buyer_name, user_id)
 
-        # 7. Also notify the supplier
         notify_supplier = Notification(
             user_id=listing.supplier_id,
             title='Your Waste Has Been Sold',

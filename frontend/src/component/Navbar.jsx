@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { Menu, X, ChevronDown, User, Shield, LogOut } from "lucide-react";
+import { Menu, X, ChevronDown, User, UserPlus, LogOut } from "lucide-react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import logo from "../assets/logo.png";
 
@@ -404,12 +404,12 @@ const ReViveNavbar = () => {
                         <span>User Login</span>
                       </Link>
                       <Link
-                        to="/adminlogin"
+                        to="/login"
                         className="font-display flex items-center gap-3 border-t border-[#0E2A1C]/10 px-4 py-2.5 text-sm text-[#0E2A1C]/80 transition hover:bg-[#11402D]/5 hover:text-[#11402D]"
                         onClick={() => setLoginDropdownOpen(false)}
                       >
-                        <Shield className="h-4 w-4" />
-                        <span>Admin Login</span>
+                        <UserPlus className="h-4 w-4" />
+                        <span>Register</span>
                       </Link>
                     </div>
                   )}
@@ -543,12 +543,12 @@ const ReViveNavbar = () => {
                     User Login
                   </Link>
                   <Link
-                    to="/adminlogin"
+                    to="/login"
                     className="font-display block w-full rounded-xl bg-[#11402D] px-4 py-3 text-center font-semibold text-white transition hover:bg-[#0A1A0F] flex items-center justify-center gap-2"
                     onClick={() => setMobileMenuOpen(false)}
                   >
-                    <Shield className="h-4 w-4" />
-                    Admin Login
+                    <UserPlus className="h-4 w-4" />
+                    Register
                   </Link>
                 </>
               )}
