@@ -1,5 +1,6 @@
+// src/component/Navbar.jsx
 import React, { useEffect, useState, useMemo } from "react";
-import { Menu, X, ChevronDown, User, Shield, LogOut } from "lucide-react";
+import { Menu, X, ChevronDown, User, UserPlus, LogOut } from "lucide-react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import logo from "../assets/logo.png";
 
@@ -13,15 +14,61 @@ const ReViveNavbar = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // ─── Check user authentication and role ──────────────────────
-  const isAuthenticated = localStorage.getItem("isAuthenticated") === "true";
-  const user = JSON.parse(localStorage.getItem("user") || "null");
-  const isProducer = user && (user.role === "producer" || user.role === "energy-producer");
+  // ─── Auth state (reactive) ───────────────────────────────────
+  const [user, setUser] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("user") || "null");
+    } catch {
+      return null;
+    }
+  });
+  const [isAuthenticated, setIsAuthenticated] = useState(
+    localStorage.getItem("isAuthenticated") === "true"
+  );
+
+  // ─── Re-read on every route change ───────────────────────────
+  useEffect(() => {
+    try {
+      setUser(JSON.parse(localStorage.getItem("user") || "null"));
+    } catch {
+      setUser(null);
+    }
+    setIsAuthenticated(localStorage.getItem("isAuthenticated") === "true");
+  }, [location.pathname]);
+
+  // ─── Listen for cross-tab changes AND custom "authChange" event ──
+  useEffect(() => {
+    const sync = () => {
+      try {
+        setUser(JSON.parse(localStorage.getItem("user") || "null"));
+      } catch {
+        setUser(null);
+      }
+      setIsAuthenticated(localStorage.getItem("isAuthenticated") === "true");
+    };
+
+    window.addEventListener("storage", sync); // fires in other tabs
+    window.addEventListener("authChange", sync); // fires same-tab, custom
+
+    return () => {
+      window.removeEventListener("storage", sync);
+      window.removeEventListener("authChange", sync);
+    };
+  }, []);
+
+  // ─── Derived flags ───────────────────────────────────────────
+  const isProducer =
+    user && (user.role === "producer" || user.role === "energy-producer");
 
   // ─── Define base nav links ──────────────────────────────────
   const allNavLinks = [
     { name: "Home", href: "/", hasDropdown: false },
-    { name: "Marketplace", href: "/marketplace", hasDropdown: false, requiresProducer: true },
+    {
+      name: "Marketplace",
+      href: "/marketplace",
+      hasDropdown: false,
+      requiresProducer: true,
+    },
     {
       name: "Solutions",
       href: "/solutions",
@@ -38,17 +85,17 @@ const ReViveNavbar = () => {
     { name: "Partners", href: "/partners", hasDropdown: false },
     { name: "Resources", href: "/resources", hasDropdown: false },
     { name: "About", href: "/about", hasDropdown: false },
-    { name: "FAQ", href: "/faq", hasDropdown: false },   // ✅ Added FAQ before Contact
+    { name: "FAQ", href: "/faq", hasDropdown: false },
     { name: "Contact", href: "/contact", hasDropdown: false },
   ];
 
   // ─── Filter nav links based on role ──────────────────────────
   const navLinks = useMemo(() => {
-    return allNavLinks.filter(link => {
+    return allNavLinks.filter((link) => {
       if (link.requiresProducer) {
-        return isProducer; // only show Marketplace if user is a producer
+        return isProducer;
       }
-      return true; // always show other links
+      return true;
     });
   }, [isProducer]);
 
@@ -113,10 +160,16 @@ const ReViveNavbar = () => {
       if (openDropdown && !event.target.closest(".dropdown-container")) {
         setOpenDropdown(null);
       }
-      if (loginDropdownOpen && !event.target.closest(".login-dropdown-container")) {
+      if (
+        loginDropdownOpen &&
+        !event.target.closest(".login-dropdown-container")
+      ) {
         setLoginDropdownOpen(false);
       }
-      if (userDropdownOpen && !event.target.closest(".user-dropdown-container")) {
+      if (
+        userDropdownOpen &&
+        !event.target.closest(".user-dropdown-container")
+      ) {
         setUserDropdownOpen(false);
       }
     };
@@ -137,9 +190,29 @@ const ReViveNavbar = () => {
     localStorage.removeItem("user");
     localStorage.removeItem("isAuthenticated");
     localStorage.removeItem("loginTime");
+    localStorage.removeItem("token");
+    localStorage.removeItem("role");
     setUserDropdownOpen(false);
+    setMobileMenuOpen(false);
+
+    // Notify this tab + any other mounted navbar instances
+    window.dispatchEvent(new Event("authChange"));
+
     navigate("/");
   };
+
+  // ─── Display name helper ─────────────────────────────────────
+  const displayName =
+    (user &&
+      (user.firstName && user.lastName
+        ? `${user.firstName} ${user.lastName}`
+        : user.full_name || user.firstName || "User")) ||
+    "User";
+
+  const firstNameOnly =
+    (user &&
+      (user.firstName || (user.full_name && user.full_name.split(" ")[0]) || "User")) ||
+    "User";
 
   return (
     <>
@@ -187,11 +260,10 @@ const ReViveNavbar = () => {
               </div>
 
               <div className="min-w-0 leading-tight">
-                <h1 className="font-display truncate text-lg sm:text-xl md:text-2xl font-bold tracking-tight text-[#0E2A1C]">
-                  Re<span className="text-[#11402D]">V</span>ive{" "}
-                  <span className="text-[#11402D]">Energy</span>
+                <h1 className="font-display truncate text-lg sm:text-xl md:text-2xl font-bold tracking-tight text-slate-900">
+                  Re<span className="text-[#9CF06B]">V</span>ive{" "}
+                  <span className="text-[#9CF06B]">Energy</span>
                 </h1>
-
                 <p className="font-mono-cw truncate text-[9px] sm:text-[10px] md:text-xs font-semibold uppercase italic tracking-wide text-[#11402D]">
                   TRANSFORMING WASTE
                 </p>
@@ -336,7 +408,7 @@ const ReViveNavbar = () => {
               ))}
             </div>
 
-            {/* Desktop Login */}
+            {/* Desktop Account / Login */}
             <div className="hidden lg:flex shrink-0 items-center">
               {isAuthenticated && user ? (
                 <div className="relative user-dropdown-container">
@@ -345,7 +417,7 @@ const ReViveNavbar = () => {
                     className="font-display flex items-center gap-2 rounded-full border border-[#11402D]/20 px-4 py-2 text-sm font-semibold text-[#0E2A1C] transition hover:border-[#11402D] hover:bg-[#11402D]/5"
                   >
                     <User className="h-4 w-4" />
-                    <span>{user.firstName || "User"}</span>
+                    <span className="max-w-[120px] truncate">{firstNameOnly}</span>
                     <ChevronDown
                       className={`h-4 w-4 transition-transform duration-200 ${
                         userDropdownOpen ? "rotate-180" : ""
@@ -356,10 +428,12 @@ const ReViveNavbar = () => {
                   {userDropdownOpen && (
                     <div className="absolute right-0 top-full z-50 mt-2 w-56 rounded-xl border border-[#0E2A1C]/10 bg-white py-2 shadow-lg">
                       <div className="border-b border-[#0E2A1C]/10 px-4 py-2.5">
-                        <p className="font-display text-sm font-semibold text-[#0E2A1C]">
-                          {user.firstName} {user.lastName}
+                        <p className="font-display text-sm font-semibold text-[#0E2A1C] truncate">
+                          {displayName}
                         </p>
-                        <p className="font-mono-cw text-xs text-[#5A7060]">{user.email}</p>
+                        <p className="font-mono-cw text-xs text-[#5A7060] truncate">
+                          {user.email}
+                        </p>
                       </div>
                       <Link
                         to="/dashboard"
@@ -383,9 +457,10 @@ const ReViveNavbar = () => {
                 <div className="relative login-dropdown-container">
                   <button
                     onClick={() => setLoginDropdownOpen(!loginDropdownOpen)}
-                    className="font-display rounded-full border border-[#0E2A1C]/20 px-4 xl:px-5 py-2 text-sm font-semibold text-[#0E2A1C] transition hover:border-[#11402D] hover:bg-[#11402D]/5 flex items-center gap-1"
+                    className="font-display rounded-full border border-[#0E2A1C]/20 px-4 xl:px-5 py-2 text-sm font-semibold text-[#0E2A1C] transition hover:border-[#11402D] hover:bg-[#11402D]/5 flex items-center gap-1.5"
                   >
-                    Log in
+                    <User className="h-4 w-4" />
+                    Account
                     <ChevronDown
                       className={`h-4 w-4 transition-transform duration-200 ${
                         loginDropdownOpen ? "rotate-180" : ""
@@ -401,15 +476,15 @@ const ReViveNavbar = () => {
                         onClick={() => setLoginDropdownOpen(false)}
                       >
                         <User className="h-4 w-4" />
-                        <span>User Login</span>
+                        <span>Sign in</span>
                       </Link>
                       <Link
-                        to="/adminlogin"
+                        to="/register"
                         className="font-display flex items-center gap-3 border-t border-[#0E2A1C]/10 px-4 py-2.5 text-sm text-[#0E2A1C]/80 transition hover:bg-[#11402D]/5 hover:text-[#11402D]"
                         onClick={() => setLoginDropdownOpen(false)}
                       >
-                        <Shield className="h-4 w-4" />
-                        <span>Admin Login</span>
+                        <UserPlus className="h-4 w-4" />
+                        <span>Create account</span>
                       </Link>
                     </div>
                   )}
@@ -513,10 +588,12 @@ const ReViveNavbar = () => {
               {isAuthenticated && user ? (
                 <>
                   <div className="rounded-xl bg-[#11402D]/5 px-4 py-3">
-                    <p className="font-display text-sm font-semibold text-[#0E2A1C]">
-                      {user.firstName} {user.lastName}
+                    <p className="font-display text-sm font-semibold text-[#0E2A1C] truncate">
+                      {displayName}
                     </p>
-                    <p className="font-mono-cw text-xs text-[#5A7060]">{user.email}</p>
+                    <p className="font-mono-cw text-xs text-[#5A7060] truncate">
+                      {user.email}
+                    </p>
                   </div>
                   <Link
                     to="/dashboard"
@@ -540,15 +617,15 @@ const ReViveNavbar = () => {
                     onClick={() => setMobileMenuOpen(false)}
                   >
                     <User className="h-4 w-4" />
-                    User Login
+                    Sign in
                   </Link>
                   <Link
-                    to="/adminlogin"
+                    to="/register"
                     className="font-display block w-full rounded-xl bg-[#11402D] px-4 py-3 text-center font-semibold text-white transition hover:bg-[#0A1A0F] flex items-center justify-center gap-2"
                     onClick={() => setMobileMenuOpen(false)}
                   >
-                    <Shield className="h-4 w-4" />
-                    Admin Login
+                    <UserPlus className="h-4 w-4" />
+                    Create account
                   </Link>
                 </>
               )}

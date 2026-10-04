@@ -1,9 +1,13 @@
+// src/App.jsx
 import "./App.css";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { useState, useEffect, useRef } from "react";
 
 // ─── Import ScrollToTop ──────────────────────────────────────
 import ScrollToTop from "./component/ScrollToTop";
+
+// ─── Accessibility Widget ────────────────────────────────────
+import AccessibilityWidget from "./component/AccessibilityWidget";
 
 import Navbar from "./component/Navbar";
 import Home from "./component/Home";
@@ -25,6 +29,7 @@ import SignupWasteSupplier from "./component/SignupWasteSupplier";
 import SignupEnergyProducer from "./component/SignupEnergyProducer";
 import WelcomeSplash from "./component/WelcomeSplash";
 import FAQ from "./component/FAQ";
+import Register from "./component/Register";
 
 import AdminLogin from "./admin/pages/AdminLogin";
 import AdminDashboard from "./admin/layout/AdminDashboard";
@@ -166,6 +171,7 @@ function App() {
         <Route path="/contact" element={<><Navbar /><Contact /></>} />
         <Route path="/login" element={<><Navbar /><Login /></>} />
         <Route path="/signup" element={<><Navbar /><Signup /></>} />
+       <Route path="/register" element={<><Navbar /><Register /></>} />
 
         <Route path="/faq" element={<><Navbar /><FAQ /></>} />
 
@@ -246,6 +252,9 @@ function App() {
           <Route path="disputes" element={<UserDisputes />} />
         </Route>
       </Routes>
+
+      {/* ─── Accessibility Widget (available on every page) ─── */}
+      <AccessibilityWidget />
     </BrowserRouter>
   );
 }

@@ -1,8 +1,17 @@
+# routes/supplier.py
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask_mail import Message
 from database import db
-from models import User, WasteListing, WasteRequest, TransportJob, Notification, Collection
+from models import (
+    User,
+    WasteListing,
+    WasteRequest,
+    TransportJob,
+    Notification,
+    Collection,
+    AdminSetting,
+)
 from utils.decorators import role_required
 import logging
 import threading
@@ -13,10 +22,112 @@ logger = logging.getLogger(__name__)
 supplier_bp = Blueprint("supplier", __name__)
 
 
+# ─────────────────────────────────────────────────────────────
+# HELPERS
+# ─────────────────────────────────────────────────────────────
 def current_user_id():
     return int(get_jwt_identity())
 
 
+def _safe_float(value, default=0.0):
+    try:
+        return float(value) if value is not None else default
+    except (ValueError, TypeError):
+        return default
+
+
+def get_setting(key, default=10.0):
+    setting = AdminSetting.query.filter_by(key=key).first()
+    if setting and setting.value is not None:
+        try:
+            return float(setting.value)
+        except (ValueError, TypeError):
+            return default
+    return default
+
+
+def calculate_amounts():
+    """Snapshot of the admin-configured fixed pricing."""
+    waste_value   = get_setting('waste_price', 10.00)
+    platform_fee  = get_setting('platform_fee', 10.00)
+    transport_fee = get_setting('transport_fee', 10.00)
+    return {
+        "waste_value":             waste_value,
+        "transport_fee":           transport_fee,
+        "platform_fee":            platform_fee,
+        "total_amount":            waste_value + transport_fee + platform_fee,
+        "price_per_unit":          0.0,
+        "transport_rate_per_unit": 0.0,
+    }
+
+
+def _apply_pricing(listing, amounts):
+    """
+    Write admin-configured pricing onto a WasteListing.
+    Uses ONLY columns that exist on the model (we verified via shell):
+        price_per_unit, transport_rate_per_unit, waste_value,
+        collection_fee, platform_fee, total_amount
+    """
+    if hasattr(listing, "price_per_unit"):
+        listing.price_per_unit = amounts["price_per_unit"]
+    if hasattr(listing, "transport_rate_per_unit"):
+        listing.transport_rate_per_unit = amounts["transport_rate_per_unit"]
+    if hasattr(listing, "waste_value"):
+        listing.waste_value = amounts["waste_value"]
+    if hasattr(listing, "platform_fee"):
+        listing.platform_fee = amounts["platform_fee"]
+    if hasattr(listing, "total_amount"):
+        listing.total_amount = amounts["total_amount"]
+
+    # transport fee is stored under collection_fee on this model
+    if hasattr(listing, "collection_fee"):
+        listing.collection_fee = amounts["transport_fee"]
+    elif hasattr(listing, "transport_fee"):
+        listing.transport_fee = amounts["transport_fee"]
+
+
+def listing_to_dict(item):
+    """Serialise a WasteListing safely. Exposes API name 'transport_fee'
+    even though the DB column is 'collection_fee'."""
+    if item is None:
+        return None
+
+    created = getattr(item, "created_at", None)
+
+    # Read transport fee from whichever column exists
+    transport_fee = 0.0
+    if hasattr(item, "collection_fee"):
+        transport_fee = _safe_float(item.collection_fee)
+    elif hasattr(item, "transport_fee"):
+        transport_fee = _safe_float(item.transport_fee)
+
+    return {
+        "id":             item.id,
+        "waste_type":     item.waste_type,
+        "category":       item.category,
+        "quantity":       _safe_float(item.quantity),
+        "unit":           item.unit,
+        "location":       item.location,
+        "pickup_address": item.pickup_address,
+        "description":    item.description,
+        "image_url":      item.image_url,
+        "status":         item.status,
+        "created_at":     created.isoformat() if created else None,
+        # ── pricing ──
+        "price_per_unit": _safe_float(getattr(item, "price_per_unit", 0)),
+        "transport_rate_per_unit": _safe_float(
+            getattr(item, "transport_rate_per_unit", 0)
+        ),
+        "waste_value":   _safe_float(getattr(item, "waste_value", 0)),
+        "transport_fee": transport_fee,                       # API name
+        "platform_fee":  _safe_float(getattr(item, "platform_fee", 0)),
+        "total_amount":  _safe_float(getattr(item, "total_amount", 0)),
+    }
+
+
+# ─────────────────────────────────────────────────────────────
+# DASHBOARD
+# ─────────────────────────────────────────────────────────────
 @supplier_bp.route("/supplier/dashboard", methods=["GET"])
 @jwt_required()
 @role_required("supplier")
@@ -92,6 +203,7 @@ def supplier_dashboard():
                     "unit": item.unit,
                     "location": item.location,
                     "status": item.status,
+                    "total_amount": _safe_float(getattr(item, "total_amount", 0)),
                     "created_at": item.created_at.isoformat() if item.created_at else None,
                 }
                 for item in recent_listings
@@ -127,6 +239,9 @@ def supplier_dashboard():
         return jsonify({"message": f"Internal server error: {str(e)}"}), 500
 
 
+# ─────────────────────────────────────────────────────────────
+# CREATE LISTING — with admin-set fixed pricing
+# ─────────────────────────────────────────────────────────────
 @supplier_bp.route("/supplier/listings", methods=["POST"])
 @jwt_required()
 @role_required("supplier")
@@ -140,6 +255,14 @@ def create_listing():
             if not data.get(field):
                 return jsonify({"message": f"Missing required field: {field}"}), 400
 
+        # ─── admin-set pricing snapshot ───
+        amounts = calculate_amounts()
+        current_app.logger.info(
+            f"💰 Pricing snapshot → waste={amounts['waste_value']} "
+            f"transport={amounts['transport_fee']} platform={amounts['platform_fee']} "
+            f"total={amounts['total_amount']}"
+        )
+
         listing = WasteListing(
             supplier_id=user_id,
             waste_type=data["waste_type"],
@@ -151,18 +274,15 @@ def create_listing():
             description=data.get("description"),
             image_url=data.get("image_url"),
             status="available",
-            price_per_unit=0.0,
-            transport_rate_per_unit=0.0,
-            waste_value=0.0,
-            collection_fee=0.0,
-            platform_fee=0.0,
-            total_amount=0.0,
         )
+
+        # Write pricing using only columns that exist
+        _apply_pricing(listing, amounts)
 
         db.session.add(listing)
         db.session.commit()
 
-        # ─── Send email notifications to all producers ──────
+        # ─── Email notification thread (unchanged logic) ───
         app = current_app._get_current_object()
 
         def send_emails():
@@ -185,54 +305,39 @@ def create_listing():
 
                     marketplace_url = "http://localhost:5173/dashboard/marketplace"
                     subject = f"New Waste Available: {listing.waste_type}"
+                    total_display = f"KSh {_safe_float(getattr(listing, 'total_amount', 0)):,.2f}"
 
-                    # ─── HTML email content (professional template) ───
                     html_content = f"""
                     <!DOCTYPE html>
                     <html>
-                    <head>
-                        <meta charset="UTF-8">
-                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                        <title>New Waste Listing</title>
-                    </head>
-                    <body style="font-family: Arial, sans-serif; background: #f8fafc; margin: 0; padding: 0;">
-                        <table width="100%" cellpadding="0" cellspacing="0" style="background: #f8fafc; padding: 20px;">
+                    <head><meta charset="UTF-8"></head>
+                    <body style="font-family: Arial, sans-serif; background: #f8fafc; padding: 20px;">
+                        <table width="600" style="background: white; border-radius: 12px; margin: auto;">
                             <tr>
-                                <td align="center">
-                                    <table width="600" cellpadding="0" cellspacing="0" style="background: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                                        <!-- Header -->
-                                        <tr>
-                                            <td style="background: #11402D; padding: 30px; text-align: center; border-radius: 12px 12px 0 0;">
-                                                <h1 style="color: white; margin: 0; font-size: 28px;">♻️ ReVive Energy</h1>
-                                                <p style="color: #a7f3d0; margin: 5px 0;">Waste‑to‑Energy Marketplace</p>
-                                            </td>
-                                        </tr>
-                                        <!-- Content -->
-                                        <tr>
-                                            <td style="padding: 30px;">
-                                                <h2 style="color: #11402D; margin-top: 0;">New Waste Listing Available</h2>
-                                                <p style="color: #4b5563;">A supplier has posted a new waste listing that may interest you:</p>
-                                                <ul style="color: #4b5563; font-size: 15px; line-height: 1.8;">
-                                                    <li><strong>Type:</strong> {listing.waste_type}</li>
-                                                    <li><strong>Quantity:</strong> {listing.quantity} {listing.unit}</li>
-                                                    <li><strong>Location:</strong> {listing.location}</li>
-                                                    <li><strong>Pickup Address:</strong> {listing.pickup_address or "Not specified"}</li>
-                                                    <li><strong>Description:</strong> {listing.description or "No description provided"}</li>
-                                                </ul>
-                                                <div style="text-align: center; margin: 30px 0;">
-                                                    <a href="{marketplace_url}" style="background: #11402D; color: white; padding: 12px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">View in Marketplace</a>
-                                                </div>
-                                                <p style="color: #6b7280; font-size: 14px;">Don't miss out – request this waste before it's gone!</p>
-                                            </td>
-                                        </tr>
-                                        <!-- Footer -->
-                                        <tr>
-                                            <td style="padding: 20px; text-align: center; color: #9ca3af; font-size: 12px; border-top: 1px solid #e5e7eb;">
-                                                <p>&copy; 2026 ReVive Energy. All rights reserved.</p>
-                                                <p style="font-size: 11px; color: #d1d5db;">You received this because you are a registered producer.</p>
-                                            </td>
-                                        </tr>
-                                    </table>
+                                <td style="background: #11402D; padding: 30px; text-align: center; border-radius: 12px 12px 0 0;">
+                                    <h1 style="color: white; margin: 0;">♻️ ReVive Energy</h1>
+                                    <p style="color: #a7f3d0;">Waste‑to‑Energy Marketplace</p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 30px;">
+                                    <h2 style="color: #11402D;">New Waste Listing Available</h2>
+                                    <ul style="color: #4b5563; line-height: 1.8;">
+                                        <li><strong>Type:</strong> {listing.waste_type}</li>
+                                        <li><strong>Quantity:</strong> {listing.quantity} {listing.unit}</li>
+                                        <li><strong>Location:</strong> {listing.location}</li>
+                                        <li><strong>Pickup Address:</strong> {listing.pickup_address or "Not specified"}</li>
+                                        <li><strong>Description:</strong> {listing.description or "No description provided"}</li>
+                                        <li><strong>Total Amount:</strong> {total_display}</li>
+                                    </ul>
+                                    <div style="text-align: center; margin: 30px 0;">
+                                        <a href="{marketplace_url}" style="background: #11402D; color: white; padding: 12px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">View in Marketplace</a>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 20px; text-align: center; color: #9ca3af; font-size: 12px;">
+                                    <p>&copy; 2026 ReVive Energy. All rights reserved.</p>
                                 </td>
                             </tr>
                         </table>
@@ -240,66 +345,40 @@ def create_listing():
                     </html>
                     """
 
-                    # ─── Plain‑text version ──────────────────────────
                     plain_text = f"""
-                    ReVive Energy – New Waste Listing
+ReVive Energy – New Waste Listing
 
-                    A supplier has posted a new waste listing:
+Type: {listing.waste_type}
+Quantity: {listing.quantity} {listing.unit}
+Location: {listing.location}
+Pickup Address: {listing.pickup_address or "Not specified"}
+Description: {listing.description or "No description provided"}
+Total Amount: {total_display}
 
-                    Type: {listing.waste_type}
-                    Quantity: {listing.quantity} {listing.unit}
-                    Location: {listing.location}
-                    Pickup Address: {listing.pickup_address or "Not specified"}
-                    Description: {listing.description or "No description provided"}
-
-                    View it here: {marketplace_url}
-
-                    © 2026 ReVive Energy
+View it here: {marketplace_url}
                     """
 
-                    # ─── Build and send message ─────────────────────
                     for producer in producers:
                         if not producer.email:
-                            app.logger.warning(f"Producer {producer.id} has no email, skipping.")
                             continue
-
                         msg = Message(
                             subject=subject,
                             recipients=[producer.email],
                             html=html_content,
                             body=plain_text,
                             sender=('ReVive Energy', app.config.get('MAIL_DEFAULT_SENDER')),
-                            reply_to=app.config.get('MAIL_DEFAULT_SENDER'),
-                            extra_headers={
-                                'List-Unsubscribe': f'<mailto:{app.config.get("MAIL_DEFAULT_SENDER")}?subject=unsubscribe>',
-                                'X-Mailer': 'ReVive Energy Platform',
-                                'X-Priority': '3 (Normal)',
-                                'X-MSMail-Priority': 'Normal',
-                                'Importance': 'Normal',
-                                'X-Auto-Response-Suppress': 'OOF, DR, RN, NRN, AutoReply',
-                                'X-Report-Abuse': f'Please report abuse to {app.config.get("MAIL_DEFAULT_SENDER")}'
-                            }
                         )
                         mail.send(msg)
-                        app.logger.info(f"✅ Email sent to {producer.email}")
 
                 except Exception as e:
                     app.logger.error(f"❌ Email sending error: {e}", exc_info=True)
 
-        thread = threading.Thread(target=send_emails)
-        thread.start()
+        threading.Thread(target=send_emails).start()
 
         return jsonify({
             "message": "Listing created successfully. Producers will be notified via email.",
             "id": listing.id,
-            "listing": {
-                "id": listing.id,
-                "waste_type": listing.waste_type,
-                "quantity": listing.quantity,
-                "unit": listing.unit,
-                "location": listing.location,
-                "status": listing.status,
-            },
+            "listing": listing_to_dict(listing),
         }), 201
 
     except Exception as error:
@@ -308,33 +387,32 @@ def create_listing():
         return jsonify({"message": f"Server error: {str(error)}"}), 500
 
 
+# ─────────────────────────────────────────────────────────────
+# GET LISTINGS
+# ─────────────────────────────────────────────────────────────
 @supplier_bp.route("/supplier/listings", methods=["GET"])
 @jwt_required()
 @role_required("supplier")
 def get_listings():
-    user_id = current_user_id()
-    listings = WasteListing.query.filter_by(
-        supplier_id=user_id
-    ).order_by(WasteListing.created_at.desc()).all()
+    try:
+        user_id = current_user_id()
+        listings = WasteListing.query.filter_by(
+            supplier_id=user_id
+        ).order_by(WasteListing.created_at.desc()).all()
 
-    return jsonify([
-        {
-            "id": item.id,
-            "waste_type": item.waste_type,
-            "category": item.category,
-            "quantity": item.quantity,
-            "unit": item.unit,
-            "location": item.location,
-            "pickup_address": item.pickup_address,
-            "description": item.description,
-            "image_url": item.image_url,
-            "status": item.status,
-            "created_at": item.created_at.isoformat() if item.created_at else None,
-        }
-        for item in listings
-    ]), 200
+        return jsonify([listing_to_dict(item) for item in listings]), 200
+
+    except Exception as e:
+        current_app.logger.error(
+            f"❌ get_listings failed for user {current_user_id()}: {e}",
+            exc_info=True,
+        )
+        return jsonify({"message": f"Failed to load listings: {e}"}), 500
 
 
+# ─────────────────────────────────────────────────────────────
+# UPDATE LISTING
+# ─────────────────────────────────────────────────────────────
 @supplier_bp.route("/supplier/listings/<int:listing_id>", methods=["PATCH"])
 @jwt_required()
 @role_required("supplier")
@@ -364,21 +442,19 @@ def update_listing(listing_id):
             else:
                 setattr(listing, field, data[field])
 
+    # pricing fields are NOT editable by suppliers — set by admin only
+
     db.session.commit()
 
     return jsonify({
         "message": "Listing updated successfully",
-        "listing": {
-            "id": listing.id,
-            "waste_type": listing.waste_type,
-            "quantity": listing.quantity,
-            "unit": listing.unit,
-            "location": listing.location,
-            "status": listing.status,
-        }
+        "listing": listing_to_dict(listing),
     }), 200
 
 
+# ─────────────────────────────────────────────────────────────
+# DELETE LISTING
+# ─────────────────────────────────────────────────────────────
 @supplier_bp.route("/supplier/listings/<int:listing_id>", methods=["DELETE"])
 @jwt_required()
 @role_required("supplier")
@@ -398,6 +474,9 @@ def delete_listing(listing_id):
     return jsonify({"message": "Listing deleted successfully"}), 200
 
 
+# ─────────────────────────────────────────────────────────────
+# REQUESTS
+# ─────────────────────────────────────────────────────────────
 @supplier_bp.route("/supplier/requests", methods=["GET"])
 @jwt_required()
 @role_required("supplier")
@@ -418,6 +497,7 @@ def get_requests():
             "producer_id": item.producer_id,
             "status": item.status,
             "message": item.message,
+            "total_amount": _safe_float(getattr(listing, "total_amount", 0)) if listing else 0.0,
             "created_at": item.created_at.isoformat() if item.created_at else None,
         })
     return jsonify(result), 200
@@ -461,6 +541,7 @@ def approve_request(request_id):
             "status": waste_request.status,
             "listing_id": listing.id,
             "listing_status": listing.status,
+            "total_amount": _safe_float(getattr(listing, "total_amount", 0)),
         },
     }), 200
 
@@ -476,8 +557,6 @@ def reject_request(request_id):
     if int(listing.supplier_id) != user_id:
         return jsonify({
             "message": "Unauthorized: this request does not belong to you",
-            "listing_supplier_id": listing.supplier_id,
-            "logged_in_user_id": user_id,
         }), 403
 
     if waste_request.status != "pending":
@@ -497,13 +576,13 @@ def reject_request(request_id):
 
     return jsonify({
         "message": "Request rejected successfully",
-        "request": {
-            "id": waste_request.id,
-            "status": waste_request.status,
-        },
+        "request": {"id": waste_request.id, "status": waste_request.status},
     }), 200
 
 
+# ─────────────────────────────────────────────────────────────
+# COLLECTIONS
+# ─────────────────────────────────────────────────────────────
 @supplier_bp.route("/supplier/collections", methods=["GET"])
 @jwt_required()
 @role_required("supplier")
@@ -516,12 +595,6 @@ def get_supplier_collections():
     result = []
     for job in jobs:
         transporter = job.transporter if job.transporter_id else None
-        transporter_name = transporter.full_name if transporter else None
-        transporter_phone = transporter.phone if transporter else None
-        vehicle_type = transporter.vehicle_types if transporter else None
-        vehicle_number = transporter.license_number if transporter else None
-        coverage_area = transporter.coverage_area if transporter else None
-
         result.append({
             "id": job.id,
             "waste_type": job.waste_type,
@@ -531,11 +604,11 @@ def get_supplier_collections():
             "delivery_location": job.delivery_location,
             "status": job.status,
             "transporter_id": job.transporter_id,
-            "transporter_name": transporter_name,
-            "transporter_phone": transporter_phone,
-            "vehicle_type": vehicle_type,
-            "vehicle_number": vehicle_number,
-            "coverage_area": coverage_area,
+            "transporter_name": transporter.full_name if transporter else None,
+            "transporter_phone": transporter.phone if transporter else None,
+            "vehicle_type": transporter.vehicle_types if transporter else None,
+            "vehicle_number": transporter.license_number if transporter else None,
+            "coverage_area": transporter.coverage_area if transporter else None,
             "created_at": job.created_at.isoformat() if job.created_at else None,
         })
 

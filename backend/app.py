@@ -1,7 +1,10 @@
+# app.py
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity
 from flask_mail import Mail, Message
+from werkzeug.exceptions import HTTPException
+import traceback
 from config import Config
 from database import db
 from sqlalchemy import func
@@ -59,7 +62,25 @@ def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
 
-    CORS(app, resources={r"/api/*": {"origins": "*"}})
+    # ─── CORS ────────────────────────────────────────────────────
+    # Explicit origins (needed when supports_credentials=True).
+    CORS(
+        app,
+        resources={
+            r"/api/*": {
+                "origins": [
+                    "http://localhost:5173",
+                    "http://127.0.0.1:5173",
+                    "http://localhost:3000",
+                    "http://127.0.0.1:3000",
+                ]
+            }
+        },
+        supports_credentials=True,
+        allow_headers=["Content-Type", "Authorization"],
+        expose_headers=["Content-Type", "Authorization"],
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    )
 
     db.init_app(app)
     JWTManager(app)
@@ -76,7 +97,7 @@ def create_app():
     mail = Mail(app)
     app.extensions["mail"] = mail  # ← CRITICAL: attach for blueprints
 
-    # ─── Register Blueprints ──────────────────────────────────────
+    # ─── Register Blueprints ─────────────────────────────────────
     app.register_blueprint(auth_bp, url_prefix="/api")
     app.register_blueprint(dashboard_bp, url_prefix="/api")
     app.register_blueprint(supplier_bp, url_prefix="/api")
@@ -556,6 +577,33 @@ def create_app():
             print(f"   {rule.rule:55} [{methods}]")
 
         print()
+
+    # ─── Global error handler ─────────────────────────────────────
+    # Ensures CORS headers are present on 500 responses so the
+    # browser can read the real error instead of "blocked by CORS policy".
+    @app.errorhandler(Exception)
+    def _handle_uncaught(e):
+        # Let Flask handle 401/403/404 etc. normally
+        if isinstance(e, HTTPException):
+            return e
+
+        # Print the full traceback to the server terminal
+        traceback.print_exc()
+
+        resp = jsonify({
+            "message": str(e),
+            "type": type(e).__name__,
+        })
+        resp.status_code = 500
+
+        # Manually attach CORS headers so the browser doesn't mask it
+        origin = request.headers.get("Origin")
+        if origin:
+            resp.headers["Access-Control-Allow-Origin"] = origin
+            resp.headers["Access-Control-Allow-Credentials"] = "true"
+            resp.headers["Vary"] = "Origin"
+
+        return resp
 
     return app
 

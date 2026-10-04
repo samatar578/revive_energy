@@ -1,6 +1,6 @@
 // src/users/pages/supplier/SupplierDashboardContent.jsx
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';   // ← added useNavigate
 import {
   Package,
   Truck,
@@ -40,6 +40,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 const COLORS = ['#11402D', '#34D399', '#60A5FA', '#FBBF24', '#F59E0B', '#EF4444', '#8B5CF6'];
 
 const SupplierDashboardContent = () => {
+  const navigate = useNavigate();   // ← added
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [dashboardData, setDashboardData] = useState({
@@ -58,26 +59,72 @@ const SupplierDashboardContent = () => {
     fetchDashboardData();
   }, []);
 
+  // ─── auth-aware fetch helper ─────────────────────────────
   const fetchDashboardData = async () => {
     setLoading(true);
     setError(null);
     try {
       const token = localStorage.getItem('token');
-      if (!token) throw new Error('Not authenticated');
+      if (!token) {
+        redirectToLogin('You are not signed in.');
+        return;
+      }
 
       const response = await fetch(`${API_URL}/supplier/dashboard`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      if (!response.ok) throw new Error('Failed to load dashboard');
+      // ── Handle 401 (expired / invalid JWT) ──
+      if (response.status === 401) {
+        redirectToLogin('Your session has expired. Please sign in again.');
+        return;
+      }
+
+      // ── Handle 403 (valid token, wrong role) ──
+      if (response.status === 403) {
+        setError('You do not have permission to view this dashboard.');
+        return;
+      }
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.message || `Failed to load dashboard (${response.status})`);
+      }
+
       const data = await response.json();
-      setDashboardData(data);
+      setDashboardData({
+        stats: {
+          myListings: data?.stats?.myListings ?? 0,
+          collectionRequests: data?.stats?.collectionRequests ?? 0,
+          pendingCollections: data?.stats?.pendingCollections ?? 0,
+          completedCollections: data?.stats?.completedCollections ?? 0,
+          // keep any additional fields the backend sends
+          ...data?.stats,
+        },
+        recentListings: data?.recentListings ?? [],
+        upcomingPickups: data?.upcomingPickups ?? [],
+        notifications: data?.notifications ?? [],
+      });
     } catch (err) {
       console.error('Dashboard fetch error:', err);
-      setError(err.message);
+      // Network failure vs server error
+      setError(
+        err.name === 'TypeError'
+          ? 'Cannot reach the server. Please check your connection.'
+          : err.message
+      );
     } finally {
       setLoading(false);
     }
+  };
+
+  // ─── Clear stale auth and bounce to login ────────────────
+  const redirectToLogin = (reason) => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('userRole');
+    sessionStorage.setItem('authRedirectReason', reason || '');
+    navigate('/login', { replace: true });
   };
 
   // ─── Chart Data ──────────────────────────────────────────────
@@ -119,12 +166,20 @@ const SupplierDashboardContent = () => {
         <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
         <h3 className="font-display text-xl font-bold text-red-700">Unable to Load Dashboard</h3>
         <p className="text-red-600 mt-2">{error}</p>
-        <button
-          onClick={fetchDashboardData}
-          className="mt-6 px-6 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition font-medium"
-        >
-          Try Again
-        </button>
+        <div className="mt-6 flex items-center justify-center gap-3">
+          <button
+            onClick={fetchDashboardData}
+            className="px-6 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition font-medium"
+          >
+            Try Again
+          </button>
+          <button
+            onClick={() => redirectToLogin('Signed out manually.')}
+            className="px-6 py-3 bg-white border border-red-200 text-red-700 rounded-xl hover:bg-red-50 transition font-medium"
+          >
+            Sign In Again
+          </button>
+        </div>
       </div>
     );
   }
@@ -374,30 +429,10 @@ const SupplierDashboardContent = () => {
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
         <h3 className="font-display font-semibold text-gray-900 mb-4">Quick Actions</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <ActionButton
-            to="/dashboard/post-waste"
-            icon={Plus}
-            label="Post Waste"
-            color="emerald"
-          />
-          <ActionButton
-            to="/dashboard/requests"
-            icon={Eye}
-            label="View Requests"
-            color="blue"
-          />
-          <ActionButton
-            to="/dashboard/tracking"
-            icon={Truck}
-            label="Track Collection"
-            color="yellow"
-          />
-          <ActionButton
-            to="/dashboard/payments"
-            icon={DollarSign}
-            label="View Payments"
-            color="green"
-          />
+          <ActionButton to="/dashboard/post-waste" icon={Plus} label="Post Waste" color="emerald" />
+          <ActionButton to="/dashboard/requests" icon={Eye} label="View Requests" color="blue" />
+          <ActionButton to="/dashboard/tracking" icon={Truck} label="Track Collection" color="yellow" />
+          <ActionButton to="/dashboard/payments" icon={DollarSign} label="View Payments" color="green" />
         </div>
       </div>
     </div>
@@ -436,10 +471,7 @@ const ActionButton = ({ to, icon: Icon, label, color }) => {
   const style = colorMap[color] || colorMap.blue;
 
   return (
-    <Link
-      to={to}
-      className={`flex items-center gap-3 p-4 rounded-xl ${style} transition`}
-    >
+    <Link to={to} className={`flex items-center gap-3 p-4 rounded-xl ${style} transition`}>
       <Icon className="w-5 h-5" />
       <span className="font-medium text-gray-900 text-sm">{label}</span>
     </Link>

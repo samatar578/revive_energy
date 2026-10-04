@@ -10,17 +10,7 @@ import {
   Eye,
   EyeOff,
   ArrowRight,
-  Truck,
   ShieldCheck,
-  Headphones,
-  Leaf,
-  Zap,
-  Users,
-  Globe,
-  CheckCircle,
-  Factory,
-  Building2,
-  MapPin,
   Recycle,
   AlertCircle,
   Sparkles,
@@ -31,10 +21,7 @@ const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 function AdminLogin() {
   const navigate = useNavigate();
 
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-  });
+  const [formData, setFormData] = useState({ email: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -45,21 +32,16 @@ function AdminLogin() {
     if (token && userData) {
       try {
         const user = JSON.parse(userData);
-        if (user.role === "admin") {
-          navigate("/admin");
-        }
+        if (user.role === "admin") navigate("/admin");
       } catch (e) {
-        // invalid data, stay on login
+        // invalid data — stay on login
       }
     }
   }, [navigate]);
 
   const handleChange = (e) => {
     setError("");
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
+    setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
   const handleLogin = async (e) => {
@@ -78,9 +60,7 @@ function AdminLogin() {
 
       const response = await fetch(`${API_URL}/login`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: formData.email,
           password: formData.password,
@@ -89,13 +69,8 @@ function AdminLogin() {
 
       const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.message || "Login failed");
-      }
-
-      if (data.user.role !== "admin") {
-        throw new Error("Access denied. Admin only.");
-      }
+      if (!response.ok) throw new Error(data.message || "Login failed");
+      if (data.user.role !== "admin") throw new Error("Access denied. Admin only.");
 
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
@@ -107,9 +82,7 @@ function AdminLogin() {
         autoClose: 3000,
       });
 
-      setTimeout(() => {
-        navigate("/admin");
-      }, 800);
+      setTimeout(() => navigate("/admin"), 800);
     } catch (err) {
       console.error("Admin login error:", err);
       setError(err.message);
@@ -120,194 +93,7 @@ function AdminLogin() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex items-start sm:items-center justify-center px-4 py-10 overflow-y-auto relative">
-      <style>
-        {`
-          @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
-          .font-display { font-family: 'Space Grotesk', sans-serif; }
-          .font-mono-cw { font-family: 'JetBrains Mono', monospace; }
-
-          /* Was capped at max-height:90vh with a hidden scrollbar, which silently
-             clipped content on shorter screens. Now it just grows naturally and
-             the page itself scrolls (see the min-h-screen wrapper above). */
-          .admin-scroll { scroll-behavior: smooth; }
-
-          .Toastify__toast {
-            font-family: 'Inter', sans-serif !important;
-            border-radius: 12px !important;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.12) !important;
-          }
-          .Toastify__toast--success {
-            background: linear-gradient(135deg, #0E2A1C, #11402D) !important;
-          }
-          .Toastify__toast--error {
-            background: linear-gradient(135deg, #7f1d1d, #991b1b) !important;
-          }
-          .Toastify__toast--info {
-            background: linear-gradient(135deg, #1e3a5f, #1a4a7a) !important;
-          }
-          .Toastify__toast--warning {
-            background: linear-gradient(135deg, #78350f, #92400e) !important;
-          }
-          .Toastify__progress-bar {
-            background: #9CF06B !important;
-          }
-
-          /* ── Left panel ── */
-          .left-panel {
-            position: relative;
-            overflow: hidden;
-            border-radius: 2rem;
-            background: linear-gradient(145deg, #0E2A1C 0%, #1a5c3e 100%);
-            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6);
-          }
-          .left-panel::before {
-            content: '';
-            position: absolute;
-            inset: -2px;
-            border-radius: 2rem;
-            padding: 2px;
-            background: conic-gradient(from 120deg, #9CF06B, #34D399, #9CF06B, #34D399);
-            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            -webkit-mask-composite: xor;
-            mask-composite: exclude;
-            animation: borderSpin 6s linear infinite;
-            pointer-events: none;
-            z-index: 0;
-          }
-          @keyframes borderSpin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-
-          .left-panel-inner {
-            position: relative;
-            z-index: 2;
-            padding: 2rem 1.75rem 1.75rem 1.75rem;
-            backdrop-filter: blur(2px);
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-          }
-
-          .blob-decoration {
-            position: absolute;
-            right: -10%;
-            top: -10%;
-            width: 60%;
-            height: 60%;
-            background: radial-gradient(circle at 70% 30%, rgba(156, 240, 107, 0.3), rgba(52, 211, 153, 0.1) 60%, transparent 80%);
-            border-radius: 50%;
-            filter: blur(80px);
-            z-index: 1;
-            pointer-events: none;
-            animation: blobMove 12s ease-in-out infinite alternate;
-          }
-          @keyframes blobMove {
-            0% { transform: translate(0, 0) scale(1); }
-            100% { transform: translate(10%, 10%) scale(1.3); }
-          }
-
-          .orb-1 {
-            position: absolute;
-            bottom: 20%;
-            left: -10%;
-            width: 40%;
-            height: 40%;
-            background: radial-gradient(circle, rgba(156, 240, 107, 0.15), transparent 70%);
-            border-radius: 50%;
-            filter: blur(60px);
-            animation: orbFloat 8s ease-in-out infinite alternate;
-          }
-          .orb-2 {
-            position: absolute;
-            top: 30%;
-            right: -5%;
-            width: 30%;
-            height: 30%;
-            background: radial-gradient(circle, rgba(52, 211, 153, 0.12), transparent 70%);
-            border-radius: 50%;
-            filter: blur(50px);
-            animation: orbFloat 10s ease-in-out infinite alternate-reverse;
-          }
-          @keyframes orbFloat {
-            0% { transform: translate(0, 0) scale(1); }
-            100% { transform: translate(-10%, -10%) scale(1.2); }
-          }
-
-          .glass-stat {
-            background: rgba(255,255,255,0.08);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255,255,255,0.15);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            cursor: default;
-          }
-          .glass-stat:hover {
-            background: rgba(255,255,255,0.15);
-            transform: translateY(-4px) scale(1.02);
-            border-color: rgba(156, 240, 107, 0.4);
-            box-shadow: 0 8px 30px -8px rgba(156, 240, 107, 0.2);
-          }
-
-          .feature-item {
-            background: rgba(255,255,255,0.05);
-            backdrop-filter: blur(8px);
-            border: 1px solid rgba(255,255,255,0.08);
-            transition: all 0.2s ease;
-          }
-          .feature-item:hover {
-            background: rgba(255,255,255,0.1);
-            border-color: rgba(156, 240, 107, 0.3);
-            transform: translateX(4px);
-            box-shadow: 0 4px 20px -8px rgba(156, 240, 107, 0.1);
-          }
-
-          .right-panel {
-            background: white;
-            border-radius: 2rem;
-            box-shadow: inset 0 1px 3px rgba(0,0,0,0.02);
-          }
-
-          /* Form fields — professional, understated, matches the main Login page */
-          .input-field {
-            transition: border-color 0.15s ease, box-shadow 0.15s ease;
-          }
-          .input-field:hover {
-            border-color: #CBD5E1;
-          }
-          .input-field:focus-within {
-            border-color: #11402D;
-            box-shadow: 0 0 0 3px rgba(17, 64, 45, 0.08);
-          }
-          .input-field:focus-within:hover {
-            border-color: #11402D;
-          }
-
-          .btn-primary {
-            background: #11402D;
-            transition: background-color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
-          }
-          .btn-primary:hover:not(:disabled) {
-            background: #0E2A1C;
-            box-shadow: 0 4px 14px -4px rgba(17, 64, 45, 0.35);
-          }
-          .btn-primary:active:not(:disabled) {
-            background: #0A2115;
-            transform: scale(0.99);
-          }
-          .btn-primary:disabled {
-            opacity: 0.7;
-            cursor: not-allowed;
-          }
-          .btn-primary:focus-visible {
-            outline: none;
-            box-shadow: 0 0 0 3px rgba(17, 64, 45, 0.25);
-          }
-        `}
-      </style>
-
+    <div className="admin-auth-shell">
       <ToastContainer
         position="top-right"
         autoClose={3000}
@@ -321,175 +107,462 @@ function AdminLogin() {
         theme="colored"
       />
 
-      <div className="w-full max-w-5xl grid lg:grid-cols-2 bg-white rounded-3xl shadow-2xl overflow-hidden border border-green-100/50 right-panel">
-        {/* ─── Left Brand Section ── */}
-        <div className="hidden lg:flex left-panel">
-          <div className="left-panel-inner">
-            <div className="blob-decoration" />
-            <div className="orb-1" />
-            <div className="orb-2" />
+      {/* ─── Background decoration ─── */}
+      <div className="admin-auth-bg" aria-hidden>
+        <div className="admin-auth-bg-grid" />
+        <div className="admin-auth-bg-glow admin-auth-bg-glow-a" />
+        <div className="admin-auth-bg-glow admin-auth-bg-glow-b" />
+      </div>
 
-            <div className="relative z-10">
-              <div className="inline-flex items-center gap-3 rounded-2xl bg-white/10 px-4 py-3 backdrop-blur-sm border border-white/20 transition-all hover:bg-white/15">
-                <Shield className="w-6 h-6 text-[#9CF06B]" />
-                <span className="font-display font-semibold text-lg text-white">Admin Portal</span>
-                <Sparkles className="w-4 h-4 text-[#9CF06B] animate-pulse" />
-              </div>
-              <div className="mt-8">
-                <p className="font-mono-cw text-sm uppercase tracking-[0.25em] text-[#9CF06B]">Secure Access</p>
-                <h1 className="font-display mt-3 text-3xl font-bold leading-tight text-white">
-                  Admin<br /><span className="text-[#9CF06B]">Dashboard</span>
-                </h1>
-                <p className="mt-5 text-green-200 text-base leading-7 max-w-lg">
-                  Manage users, monitor waste collections, track energy production,
-                  and oversee platform operations from one central dashboard.
-                </p>
-              </div>
-            </div>
-
-            <div className="relative z-10 grid grid-cols-2 gap-3 mt-6">
-              <div className="glass-stat rounded-2xl p-4 border border-white/20">
-                <p className="font-display text-2xl font-bold text-white">1,240+</p>
-                <p className="text-sm text-[#9CF06B]">Total Users</p>
-              </div>
-              <div className="glass-stat rounded-2xl p-4 border border-white/20">
-                <p className="font-display text-2xl font-bold text-white">318+</p>
-                <p className="text-sm text-[#9CF06B]">Companies</p>
-              </div>
-              <div className="glass-stat rounded-2xl p-4 border border-white/20">
-                <p className="font-display text-2xl font-bold text-white">89</p>
-                <p className="text-sm text-[#9CF06B]">Transporters</p>
-              </div>
-              <div className="glass-stat rounded-2xl p-4 border border-white/20">
-                <p className="font-display text-2xl font-bold text-white">42</p>
-                <p className="text-sm text-[#9CF06B]">Processing Plants</p>
-              </div>
-            </div>
-
-            <div className="relative z-10 mt-4 space-y-2">
-              <div className="feature-item flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-white/90">
-                <Shield className="w-4 h-4 text-[#9CF06B]" />
-                <span>Two‑factor authentication</span>
-              </div>
-              <div className="feature-item flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-white/90">
-                <Lock className="w-4 h-4 text-[#9CF06B]" />
-                <span>Encrypted data transmission</span>
-              </div>
-              <div className="feature-item flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-white/90">
-                <CheckCircle className="w-4 h-4 text-[#9CF06B]" />
-                <span>Real‑time security monitoring</span>
-              </div>
-              <div className="feature-item flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-white/90">
-                <Users className="w-4 h-4 text-[#9CF06B]" />
-                <span>Full user management</span>
-              </div>
-            </div>
+      <div className="admin-card">
+        {/* Admin badge */}
+        <div className="admin-badge">
+          <div className="admin-badge-icon">
+            <Shield className="w-5 h-5" />
           </div>
+          <span className="admin-badge-label">
+            Admin Portal
+            <Sparkles className="w-3 h-3" />
+          </span>
         </div>
 
-        {/* ─── Right Login Form ── */}
-        <div className="p-6 sm:p-8 lg:p-10 flex items-center admin-scroll">
-          <div className="w-full max-w-md mx-auto">
-            <div className="lg:hidden mb-6 text-center">
-              <div className="mx-auto mb-3 w-14 h-14 rounded-2xl bg-gradient-to-br from-[#0E2A1C] to-[#11402D] flex items-center justify-center text-white shadow-lg">
-                <Shield className="w-7 h-7 text-[#9CF06B]" />
-              </div>
-              <h1 className="font-display text-2xl font-bold text-slate-900">Admin Portal</h1>
-              <p className="font-mono-cw text-xs text-green-600 mt-1 tracking-wider">SECURE ACCESS</p>
-            </div>
+        {/* Header */}
+        <div className="text-center mb-7">
+          <span className="eyebrow">Secure Access</span>
+          <h1 className="auth-title">Sign in as Admin</h1>
+          <p className="auth-sub">
+            Enter your credentials to access the dashboard
+          </p>
+        </div>
 
-            <p className="text-xs font-semibold tracking-[0.2em] text-[#11402D] uppercase">Admin Login</p>
-            <h2 className="mt-2 text-2xl font-bold text-slate-900">Welcome back</h2>
-            <p className="mt-1.5 text-sm text-slate-500 leading-6">Enter your admin credentials to access the dashboard.</p>
+        {/* Form */}
+        <form onSubmit={handleLogin} className="space-y-4" autoComplete="off">
+          <div>
+            <Label>Admin Email</Label>
+            <Field icon={Mail}>
+              <input
+                type="email"
+                name="email"
+                placeholder="admin@reviveenergy.com"
+                value={formData.email}
+                onChange={handleChange}
+                required
+                autoComplete="off"
+                className="ainput"
+              />
+            </Field>
+          </div>
 
-            <form onSubmit={handleLogin} className="mt-6 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600 mb-1.5">
-                  Admin Email
-                </label>
-                <div className="flex items-center gap-3 rounded-lg border border-slate-300 bg-white px-4 py-3 input-field">
-                  <Mail className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                  <input
-                    type="email"
-                    name="email"
-                    placeholder="admin@reviveenergy.com"
-                    value={formData.email}
-                    onChange={handleChange}
-                    required
-                    autoComplete="off"
-                    className="w-full bg-transparent outline-none text-slate-700 placeholder:text-slate-400 text-sm"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                    Password
-                  </label>
-                  <Link to="/admin/forgot-password" className="text-xs font-semibold text-[#11402D] hover:underline">
-                    Forgot password?
-                  </Link>
-                </div>
-                <div className="flex items-center gap-3 rounded-lg border border-slate-300 bg-white px-4 py-3 input-field">
-                  <Lock className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    name="password"
-                    placeholder="Enter your password"
-                    value={formData.password}
-                    onChange={handleChange}
-                    required
-                    autoComplete="new-password"
-                    className="w-full bg-transparent outline-none text-slate-700 placeholder:text-slate-400 text-sm"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="text-slate-400 hover:text-slate-600 flex-shrink-0"
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              {error && (
-                <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                  {error}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="w-full inline-flex items-center justify-center gap-2 rounded-lg btn-primary px-5 py-3 text-sm font-semibold text-white"
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <Label>Password</Label>
+              <Link
+                to="/admin/forgot-password"
+                className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 hover:underline -mt-2"
               >
-                {isSubmitting ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white/50 border-t-white rounded-full animate-spin" />
-                    Verifying...
-                  </>
-                ) : (
-                  <>
-                    Access Dashboard
-                    <ArrowRight className="w-4 h-4" />
-                  </>
-                )}
-              </button>
-            </form>
-
-            <p className="mt-6 text-sm text-slate-600 text-center">
-              <Link to="/" className="font-semibold text-[#11402D] hover:underline inline-flex items-center gap-1 transition-colors">
-                <Recycle className="w-4 h-4" />
-                Back to ReVive Energy
+                Forgot password?
               </Link>
+            </div>
+            <Field icon={Lock}>
+              <input
+                type={showPassword ? "text" : "password"}
+                name="password"
+                placeholder="Enter your password"
+                value={formData.password}
+                onChange={handleChange}
+                required
+                autoComplete="new-password"
+                className="ainput"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="ainput-eye"
+                aria-label="Toggle password visibility"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </Field>
+          </div>
+
+          {error && (
+            <div className="error-banner">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="primary-btn w-full mt-2"
+          >
+            {isSubmitting ? (
+              <>
+                <span className="btn-spinner" />
+                Verifying...
+              </>
+            ) : (
+              <>
+                Access Dashboard
+                <ArrowRight className="w-4 h-4" />
+              </>
+            )}
+          </button>
+        </form>
+
+        {/* Security notice */}
+        <div className="admin-notice">
+          <ShieldCheck className="w-4 h-4 admin-notice-icon" />
+          <div className="text-left">
+            <p className="admin-notice-title">Restricted area</p>
+            <p className="admin-notice-desc">
+              This portal is monitored. All access attempts are logged.
             </p>
           </div>
         </div>
+
+        {/* Back link */}
+        <p className="mt-7 text-sm text-slate-600 text-center">
+          <Link
+            to="/"
+            className="font-semibold text-emerald-700 hover:underline inline-flex items-center gap-1.5 transition-colors"
+          >
+            <Recycle className="w-4 h-4" />
+            Back to ReVive Energy
+          </Link>
+        </p>
       </div>
+
+      <style>{STYLES}</style>
     </div>
   );
 }
+
+/* ─── Small helper components ─── */
+function Field({ icon: Icon, children }) {
+  return (
+    <div className="afield">
+      <Icon className="afield-icon" />
+      {children}
+    </div>
+  );
+}
+
+function Label({ children }) {
+  return (
+    <label className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500 mb-2">
+      {children}
+    </label>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   STYLES — homepage background + decorative grid & glows
+   ═══════════════════════════════════════════════════════════════ */
+const STYLES = `
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ─── Shell ──────────────────────────────────────────────── */
+.admin-auth-shell {
+  position: relative;
+  min-height: calc(100vh - 72px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 18px;
+  background: #F6F8F4;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color: #0F172A;
+  overflow: hidden;
+}
+
+/* ─── Background decoration ─────────────────────────────── */
+.admin-auth-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+.admin-auth-bg-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(17, 64, 45, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(17, 64, 45, 0.05) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse at 50% 45%, black 20%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse at 50% 45%, black 20%, transparent 75%);
+}
+.admin-auth-bg-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: 0.55;
+}
+.admin-auth-bg-glow-a {
+  width: 480px; height: 480px;
+  top: -12%; left: -8%;
+  background: radial-gradient(circle, rgba(163, 230, 53, 0.5), transparent 65%);
+}
+.admin-auth-bg-glow-b {
+  width: 420px; height: 420px;
+  bottom: -14%; right: -6%;
+  background: radial-gradient(circle, rgba(52, 211, 153, 0.4), transparent 65%);
+}
+
+/* ─── Card ───────────────────────────────────────────────── */
+.admin-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 440px;
+  background: #FFFFFF;
+  border-radius: 24px;
+  border: 1px solid #E5EDE8;
+  padding: 32px 28px;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.05),
+    0 8px 32px -12px rgba(15, 23, 42, 0.14),
+    0 24px 60px -20px rgba(15, 23, 42, 0.10);
+  animation: cardEnter 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes cardEnter {
+  0% { opacity: 0; transform: translateY(12px) scale(0.99); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ─── Admin badge (top of card) ──────────────────────────── */
+.admin-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+.admin-badge-icon {
+  width: 36px; height: 36px;
+  border-radius: 11px;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #11402D 0%, #0A2115 100%);
+  color: #A3E635;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.15) inset,
+    0 6px 14px -6px rgba(17, 64, 45, 0.55);
+}
+.admin-badge-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #0F172A;
+}
+.admin-badge-label svg { color: #A3E635; }
+
+/* ─── Typography ─────────────────────────────────────────── */
+.eyebrow {
+  display: inline-block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #11402D;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(17, 64, 45, 0.06);
+  border: 1px solid rgba(17, 64, 45, 0.08);
+}
+.auth-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 24px;
+  line-height: 1.15;
+  font-weight: 700;
+  color: #0F172A;
+  letter-spacing: -0.02em;
+  margin-top: 12px;
+}
+.auth-sub {
+  margin-top: 6px;
+  font-size: 13.5px;
+  color: #64748B;
+  line-height: 1.55;
+}
+
+/* ─── Fields ─────────────────────────────────────────────── */
+.afield {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.afield:hover { border-color: #CBD5E1; background: #FFFFFF; }
+.afield:focus-within {
+  background: #FFFFFF;
+  border-color: #11402D;
+  box-shadow: 0 0 0 4px rgba(17, 64, 45, 0.08);
+}
+.afield-icon {
+  width: 16px; height: 16px;
+  color: #94A3B8;
+  flex-shrink: 0;
+  transition: color 0.15s ease;
+}
+.afield:focus-within .afield-icon { color: #11402D; }
+.ainput {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: inherit;
+  font-size: 14px;
+  color: #0F172A;
+  min-width: 0;
+}
+.ainput::placeholder { color: #94A3B8; }
+.ainput-eye {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #94A3B8;
+  padding: 4px;
+  margin: -4px;
+  border-radius: 6px;
+  transition: color 0.15s ease, background 0.15s ease;
+  flex-shrink: 0;
+}
+.ainput-eye:hover { color: #475569; background: #F1F5F9; }
+
+/* ─── Primary button ─────────────────────────────────────── */
+.primary-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 13px 20px;
+  border-radius: 12px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: #FFFFFF;
+  background: linear-gradient(135deg, #0F3624 0%, #11402D 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 0.12s ease, box-shadow 0.2s ease;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.12) inset,
+    0 10px 24px -12px rgba(17, 64, 45, 0.6);
+}
+.primary-btn::before {
+  content: '';
+  position: absolute;
+  top: 0; left: -40%;
+  width: 40%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.28), transparent);
+  transform: skewX(-20deg);
+  transition: left 0.6s ease;
+  pointer-events: none;
+}
+.primary-btn:hover:not(:disabled)::before { left: 110%; }
+.primary-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.12) inset,
+    0 16px 32px -14px rgba(17, 64, 45, 0.75);
+}
+.primary-btn:active:not(:disabled) { transform: translateY(0); }
+.primary-btn:disabled { opacity: 0.72; cursor: not-allowed; }
+.primary-btn:focus-visible {
+  outline: none;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.12) inset,
+    0 0 0 4px rgba(17, 64, 45, 0.25);
+}
+.btn-spinner {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #FFFFFF;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ─── Error banner ───────────────────────────────────────── */
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #FEF2F2, #FEE2E2);
+  border: 1px solid #FECACA;
+  font-size: 13px;
+  font-weight: 500;
+  color: #B91C1C;
+}
+
+/* ─── Security notice (below form) ───────────────────────── */
+.admin-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 22px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #F0FDF4, #ECFDF5);
+  border: 1px solid #BBF7D0;
+}
+.admin-notice-icon {
+  color: #059669;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.admin-notice-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #065F46;
+  letter-spacing: -0.005em;
+}
+.admin-notice-desc {
+  font-size: 11.5px;
+  color: #047857;
+  margin-top: 1px;
+  line-height: 1.5;
+}
+
+/* ─── Toast overrides ────────────────────────────────────── */
+.Toastify__toast {
+  font-family: 'Inter', sans-serif !important;
+  border-radius: 12px !important;
+  box-shadow: 0 16px 40px -10px rgba(0,0,0,0.4) !important;
+}
+.Toastify__toast--success { background: linear-gradient(135deg, #0E2A1C, #11402D) !important; }
+.Toastify__toast--error { background: linear-gradient(135deg, #7f1d1d, #991b1b) !important; }
+.Toastify__toast--info { background: linear-gradient(135deg, #1e3a5f, #1a4a7a) !important; }
+.Toastify__toast--warning { background: linear-gradient(135deg, #78350f, #92400e) !important; }
+.Toastify__progress-bar { background: #A3E635 !important; }
+
+/* ─── Reduced motion ─────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .admin-card { animation: none !important; }
+}
+
+/* ─── Mobile ─────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .admin-auth-shell { padding: 16px 12px; }
+  .admin-card { border-radius: 20px; padding: 26px 22px; }
+  .auth-title { font-size: 22px; }
+}
+`;
 
 export default AdminLogin;
